@@ -1,0 +1,8 @@
+[project]
+name = "token-vesting"
+requirements = []
+costs_version = 1
+
+[contracts.token-vesting]
+path = "contracts/token-vesting.clar"
+depends_on = []

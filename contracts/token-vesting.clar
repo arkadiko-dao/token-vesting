@@ -12,6 +12,9 @@
 ;; -- Data
 ;;
 
+;; Contract owner.
+(define-constant contract-owner tx-sender)
+
 ;; Treasury map.
 ;; Identify and stores vestings for the contract.
 (define-map treasury
@@ -20,8 +23,8 @@
 ;; Vesting ID.
 (define-data-var vesting-id uint u0)
 
-;; Vesting Vault.
-(define-data-var vesting-vault principal 'ST1SJ3DTE5DN7X54YDH5D64R3BCB6A2AG2ZQ8YPD5)
+;; The contract itself is the vesting Vault.
+(define-data-var vesting-vault principal (as-contract tx-sender))
 
 ;;
 ;; -- Public

@@ -10,40 +10,35 @@ import {
     assertEquals
 } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
-const addr = "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM";
 const contract = "token-vesting";
-const token = "xyz-token";
 
-/**
- * Bridge to test token
- */
-class ContractBridge {
+class XyzToken {
     chain: Chain;
     deployer: Account;
+    token: string = "xyz-token";
 
     constructor(chain: Chain, deployer: Account) {
         this.chain = chain;
         this.deployer = deployer;
     }
 
-    /**
-     * Get qualified token address
-     */
-    getTokenAddress() {
-        return `${addr}.${token}`;
-    }
+    balanceOf = (wallet: string) => {
+        const block = this.chain.callReadOnlyFn(this.token, "get-balance", [
+            types.principal(wallet),
+        ], this.deployer.address);
 
-    /**
-     * Get qualified contract address
-     */
-    getAddress() {
-        return `${addr}.${contract}`;
+        return block;
     }
+}
 
-    /**
-     * Deposit function
-     */
-    deposit(token: string, amount: number, lockingPeriod: number, assignees: { address: string, amount: number }[]) {
+Clarinet.test({
+    name: "[deposit] locked amount is transferred to the contract address",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+        const token = "xyz-token";
+        const amount = 1000;
+        const lockingPeriod = 48;
+        const assignees = [{address: accounts.get("wallet_3")!.address, amount: 25}];
         let assigneesList: any[] = [];
         assignees.forEach((el) => {
             assigneesList.push(
@@ -54,41 +49,75 @@ class ContractBridge {
             )
         });
 
-        const block = this.chain.mineBlock([
-			      Tx.contractCall(
-                contract,
-                'deposit',
-                [
-                    types.principal(this.getTokenAddress()),
-                    types.uint(amount),
-                    types.uint(lockingPeriod),
-                    types.list(assigneesList)
-                ],
-                this.deployer.address
-            )
-	      ]);
+        const block = chain.mineBlock(
+            [
+                Tx.contractCall(
+                    contract, "deposit",
+                    [
+                        types.principal(`${deployer.address}.${token}`),
+                        types.uint(amount),
+                        types.uint(lockingPeriod),
+                        types.list(assigneesList)
+                    ],
+                    deployer.address
+                ),
+            ]
+        );
 
-        return block.receipts[0];
+        let resp = block.receipts[0];
+        resp.result.expectOk().expectBool(true);
+
+        const xyzToken = new XyzToken(chain, deployer);
+        resp = xyzToken.balanceOf(`${deployer.address}.${contract}`);
+        resp.result.expectOk().expectUint(amount);
     }
-}
+});
 
 Clarinet.test({
-    name: "[deposit] amount to be locked is transferred to the contract",
+    name: "[redeem] unlocked amount is transferred to the transaction sender address",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const deployer = accounts.get("deployer")!;
-        const amount = 1020;
+        const token = "xyz-token";
+        const txSender = accounts.get("wallet_2")!;
+        const amount = 1000;
         const lockingPeriod = 48;
-        const assignees = [{
-            address: accounts.get("wallet_3")!.address,
-            amount: 25
-        }];
+        const assignees = [{address: txSender.address, amount: 250}];
+        let assigneesList: any[] = [];
+        assignees.forEach((el) => {
+            assigneesList.push(
+                types.tuple({
+                    'address': types.principal(el.address),
+                    'amount': types.uint(el.amount)
+                })
+            )
+        });
 
-        const contract = new ContractBridge(chain, deployer);
-        const resp = contract.deposit(token, amount, lockingPeriod, assignees);
-        const [transferEvent, _] = resp.events
+        const block = chain.mineBlock(
+            [
+                Tx.contractCall(
+                    contract, "deposit",
+                    [
+                        types.principal(`${deployer.address}.${token}`),
+                        types.uint(amount),
+                        types.uint(lockingPeriod),
+                        types.list(assigneesList)
+                    ],
+                    deployer.address
+                ),
+                Tx.contractCall(
+                    contract, "redeem",
+                    [types.principal(`${deployer.address}.${token}`)],
+                    txSender.address
+                )
+            ]
+        );
 
-        resp.result.expectOk().expectBool(true);
-        transferEvent.ft_transfer_event.amount.expectInt(amount);
-        transferEvent.ft_transfer_event.recipient.expectPrincipal(contract.getAddress());
+        const [deposit, redeem] = block.receipts;
+        deposit.result.expectOk();
+        redeem.result.expectOk();
+
+        const xyzToken = new XyzToken(chain, deployer);
+        const result = xyzToken.balanceOf(txSender.address).result;
+        result.expectOk().expectUint(assignees[0].amount);
     }
 });

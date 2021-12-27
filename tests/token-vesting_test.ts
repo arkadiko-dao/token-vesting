@@ -12,10 +12,18 @@ import {
 
 const contract = "token-vesting";
 
+/*
+ * Vesting options: locking 2000 XYZ tokens for 48 blocks.
+ */
+const vestingOptions = {
+    token: "xyz-token",
+    lockingPeriod: 48,
+    amount: 2000
+}
+
 class XyzToken {
     chain: Chain;
     deployer: Account;
-    token: string = "xyz-token";
 
     constructor(chain: Chain, deployer: Account) {
         this.chain = chain;
@@ -23,7 +31,7 @@ class XyzToken {
     }
 
     balanceOf = (wallet: string) => {
-        const block = this.chain.callReadOnlyFn(this.token, "get-balance", [
+        const block = this.chain.callReadOnlyFn(vestingOptions.token, "get-balance", [
             types.principal(wallet),
         ], this.deployer.address);
 
@@ -35,9 +43,6 @@ Clarinet.test({
     name: "[deposit] locked amount is transferred to the contract address",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const deployer = accounts.get("deployer")!;
-        const token = "xyz-token";
-        const amount = 1000;
-        const lockingPeriod = 48;
         const assignees = [{address: accounts.get("wallet_3")!.address, amount: 25}];
         let assigneesList: any[] = [];
         assignees.forEach((el) => {
@@ -54,9 +59,9 @@ Clarinet.test({
                 Tx.contractCall(
                     contract, "deposit",
                     [
-                        types.principal(`${deployer.address}.${token}`),
-                        types.uint(amount),
-                        types.uint(lockingPeriod),
+                        types.principal(`${deployer.address}.${vestingOptions.token}`),
+                        types.uint(vestingOptions.amount),
+                        types.uint(vestingOptions.lockingPeriod),
                         types.list(assigneesList)
                     ],
                     deployer.address
@@ -67,9 +72,10 @@ Clarinet.test({
         let resp = block.receipts[0];
         resp.result.expectOk().expectBool(true);
 
+        // Check balance in the contract address.
         const xyzToken = new XyzToken(chain, deployer);
         resp = xyzToken.balanceOf(`${deployer.address}.${contract}`);
-        resp.result.expectOk().expectUint(amount);
+        resp.result.expectOk().expectUint(vestingOptions.amount);
     }
 });
 
@@ -77,10 +83,7 @@ Clarinet.test({
     name: "[redeem] unlocked amount is transferred to the transaction sender address",
     async fn(chain: Chain, accounts: Map<string, Account>) {
         const deployer = accounts.get("deployer")!;
-        const token = "xyz-token";
         const txSender = accounts.get("wallet_2")!;
-        const amount = 1000;
-        const lockingPeriod = 48;
         const assignees = [{address: txSender.address, amount: 250}];
         let assigneesList: any[] = [];
         assignees.forEach((el) => {
@@ -97,16 +100,16 @@ Clarinet.test({
                 Tx.contractCall(
                     contract, "deposit",
                     [
-                        types.principal(`${deployer.address}.${token}`),
-                        types.uint(amount),
-                        types.uint(lockingPeriod),
+                        types.principal(`${deployer.address}.${vestingOptions.token}`),
+                        types.uint(vestingOptions.amount),
+                        types.uint(vestingOptions.lockingPeriod),
                         types.list(assigneesList)
                     ],
                     deployer.address
                 ),
                 Tx.contractCall(
                     contract, "redeem",
-                    [types.principal(`${deployer.address}.${token}`)],
+                    [types.principal(`${deployer.address}.${vestingOptions.token}`)],
                     txSender.address
                 )
             ]
@@ -116,6 +119,60 @@ Clarinet.test({
         deposit.result.expectOk();
         redeem.result.expectOk();
 
+        // Check balance in the assignee address.
+        const xyzToken = new XyzToken(chain, deployer);
+        const result = xyzToken.balanceOf(txSender.address).result;
+        result.expectOk().expectUint(assignees[0].amount);
+    }
+});
+
+Clarinet.test({
+    name: "[redeem] shares can be redeemed only once",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+        const txSender = accounts.get("wallet_2")!;
+        const assignees = [{address: txSender.address, amount: 250}];
+        let assigneesList: any[] = [];
+        assignees.forEach((el) => {
+            assigneesList.push(
+                types.tuple({
+                    'address': types.principal(el.address),
+                    'amount': types.uint(el.amount)
+                })
+            )
+        });
+
+        const block = chain.mineBlock(
+            [
+                Tx.contractCall(
+                    contract, "deposit",
+                    [
+                        types.principal(`${deployer.address}.${vestingOptions.token}`),
+                        types.uint(vestingOptions.amount),
+                        types.uint(vestingOptions.lockingPeriod),
+                        types.list(assigneesList)
+                    ],
+                    deployer.address
+                ),
+                Tx.contractCall(
+                    contract, "redeem",
+                    [types.principal(`${deployer.address}.${vestingOptions.token}`)],
+                    txSender.address
+                ),
+                Tx.contractCall(
+                    contract, "redeem",
+                    [types.principal(`${deployer.address}.${vestingOptions.token}`)],
+                    txSender.address
+                )
+            ]
+        );
+
+        const [deposit, redeem, notRedeemed] = block.receipts;
+        deposit.result.expectOk();
+        redeem.result.expectOk();
+        notRedeemed.result.expectErr().expectInt(10);
+
+        // Check the balance in the assignee address.
         const xyzToken = new XyzToken(chain, deployer);
         const result = xyzToken.balanceOf(txSender.address).result;
         result.expectOk().expectUint(assignees[0].amount);

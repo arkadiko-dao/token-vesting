@@ -5,7 +5,7 @@ costs_version = 1
 
 [contracts.token-vesting]
 path = "contracts/token-vesting.clar"
-depends_on = ["sip-010-trait"]
+depends_on = ["sip-010-trait", "xyz-token"]
 
 [contracts.sip-010-trait]
 path = "contracts/sip-010-trait.clar"

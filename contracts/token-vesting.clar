@@ -2,54 +2,94 @@
 ;; Token Vesting
 ;;
 ;; Vesting contract that allows deposit of SIP-010 tokens.
-;; Withdraws are unlocked to a specified set of addresses
-;; at a certain schedule and conditions.
+;; Withdraws are unlocked and allowed to a specified
+;; set of addresses at a certain schedule and conditions.
 
 ;; SIP-010 token trait.
 (use-trait ft-trait .sip-010-trait.sip-010-trait)
 
 ;;
+;; -- Error codes
+;;
+
+(define-constant share-already-redeemed (err 10))
+
+;;
 ;; -- Data
 ;;
 
-;; Contract owner.
-(define-constant contract-owner tx-sender)
+;; Vestings data structure.
+;; Stores contract vestings.
+(define-map vestings
+  { depositor: principal, token: principal }
+  { amount: uint, locking-period: uint })
 
-;; Treasury map.
-;; Identify and stores vestings for the contract.
-(define-map treasury
-  uint {sender: principal, amount: uint, token-contract: principal})
+;; Shares data structure.
+;; Stores vestings shares.
+(define-map shares
+  (tuple (address principal) (token principal))
+  (tuple (amount uint) (redeemed bool)))
 
-;; Vesting ID.
-(define-data-var vesting-id uint u0)
-
-;; The contract itself is the vesting Vault.
-(define-data-var vesting-vault principal (as-contract tx-sender))
+;; Current token context.
+(define-data-var token-context
+  (optional principal) none)
 
 ;;
 ;; -- Public
 ;;
 
-;; Deposit function.
-(define-public (deposit (token <ft-trait>) (amount uint))
+;; Deposit tokens.
+(define-public (deposit
+  (token <ft-trait>) (amount uint) (locking-period uint) (assignees (list 10 (tuple (address principal) (amount uint)))))
   (begin
-    (map-set treasury
-      (get-next-vesting-id)
-      {
-        sender: tx-sender,
-        amount: amount,
-        token-contract: (contract-of token)
-      })
+    (add-to-vestings token amount locking-period)
+    (var-set token-context (some (contract-of token)))
+    (map add-to-shares assignees)
     (try! (contract-call? token transfer
-      amount tx-sender (var-get vesting-vault) none))
+      amount tx-sender (as-contract tx-sender) none))
+    (ok true)))
+
+;; Finishes a vest,
+;; withdrawing the respective shares.
+(define-public (redeem
+  (token <ft-trait>))
+  (let (
+    (recipient contract-caller)
+    (share (get-share {address: tx-sender, token: (contract-of token)})))
+    (asserts! (not (get redeemed share)) share-already-redeemed)
+    (unwrap-panic (as-contract (contract-call? token transfer
+      (get amount share) tx-sender recipient none)))
+    (mark-share-as-redeemed token)
     (ok true)))
 
 ;;
 ;; -- Private
 ;;
 
-;; Next vesting ID.
-(define-private (get-next-vesting-id)
-  (begin
-    (var-set vesting-id (+ (var-get vesting-id) u1)) ;; increments vesting ID by one
-    (var-get vesting-id)))
+;; Mark share as redeemed.
+;; updates the amount to u0 and
+;; sets redeemed valur to true.
+(define-private (mark-share-as-redeemed
+  (token <ft-trait>))
+  (map-set shares
+    {address: tx-sender, token: (contract-of token)}
+    {amount: u0, redeemed: true}))
+
+;; Add a deposit to the vestings storage.
+(define-private (add-to-vestings
+  (token <ft-trait>) (amount uint) (locking-period uint))
+  (map-set vestings
+    {depositor: tx-sender, token: (contract-of token)}
+    {amount: amount, locking-period: locking-period}))
+
+;; Add a share to the shares storage.
+(define-private (add-to-shares
+  (share (tuple (address principal) (amount uint))))
+  (map-set shares
+    {address: (get address share), token: (unwrap-panic (var-get token-context))}
+    {amount: (get amount share), redeemed: false}))
+
+;; Get amount in the shares storage.
+(define-private (get-share
+  (key (tuple (address principal) (token principal))))
+  (unwrap-panic (map-get? shares key)))

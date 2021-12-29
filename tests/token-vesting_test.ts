@@ -10,14 +10,18 @@ import {
     assertEquals
 } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
-const addr = 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM';
 const contract = "token-vesting";
 
-/**
- * Bridge to test token
+/*
+ * Vesting options: locking 2000 XYZ tokens for 48 blocks.
  */
-class TokenBridge {
+const vestingOptions = {
+    token: "xyz-token",
+    lockingPeriod: 48,
+    amount: 2000
+}
 
+class XyzToken {
     chain: Chain;
     deployer: Account;
 
@@ -26,40 +30,151 @@ class TokenBridge {
         this.deployer = deployer;
     }
 
-    /**
-     * Get qualified token contract
-     */
-    getTokenContract(token: string) {
-        return `${addr}.${token}`;
-    }
+    balanceOf = (wallet: string) => {
+        const block = this.chain.callReadOnlyFn(vestingOptions.token, "get-balance", [
+            types.principal(wallet),
+        ], this.deployer.address);
 
-    /**
-     * Deposit function
-     */
-    deposit(token:string, amount: number) {
-        const block = this.chain.mineBlock([
-			      Tx.contractCall(
-                contract,
-                'deposit',
-                [
-                    types.principal(this.getTokenContract(token)),
-                    types.uint(amount)
-                ],
-                this.deployer.address
-            )
-		    ]);
-
-        return block.receipts[0].result;
+        return block;
     }
 }
 
 Clarinet.test({
-    name: "allows a deposit",
+    name: "[deposit] locked amount is transferred to the contract address",
     async fn(chain: Chain, accounts: Map<string, Account>) {
-        const amount = 100;
-        const token = new TokenBridge(chain, accounts.get("deployer")!);
-        const result = token.deposit("xyz-token", amount);
+        const deployer = accounts.get("deployer")!;
+        const assignees = [{address: accounts.get("wallet_3")!.address, amount: 25}];
+        let assigneesList: any[] = [];
+        assignees.forEach((el) => {
+            assigneesList.push(
+                types.tuple({
+                    'address': types.principal(el.address),
+                    'amount': types.uint(el.amount)
+                })
+            )
+        });
 
-        result.expectOk().expectBool(true);
+        const block = chain.mineBlock(
+            [
+                Tx.contractCall(
+                    contract, "deposit",
+                    [
+                        types.principal(`${deployer.address}.${vestingOptions.token}`),
+                        types.uint(vestingOptions.amount),
+                        types.uint(vestingOptions.lockingPeriod),
+                        types.list(assigneesList)
+                    ],
+                    deployer.address
+                ),
+            ]
+        );
+
+        let resp = block.receipts[0];
+        resp.result.expectOk().expectBool(true);
+
+        // Check balance in the contract address.
+        const xyzToken = new XyzToken(chain, deployer);
+        resp = xyzToken.balanceOf(`${deployer.address}.${contract}`);
+        resp.result.expectOk().expectUint(vestingOptions.amount);
+    }
+});
+
+Clarinet.test({
+    name: "[redeem] unlocked amount is transferred to the transaction sender address",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+        const txSender = accounts.get("wallet_2")!;
+        const assignees = [{address: txSender.address, amount: 250}];
+        let assigneesList: any[] = [];
+        assignees.forEach((el) => {
+            assigneesList.push(
+                types.tuple({
+                    'address': types.principal(el.address),
+                    'amount': types.uint(el.amount)
+                })
+            )
+        });
+
+        const block = chain.mineBlock(
+            [
+                Tx.contractCall(
+                    contract, "deposit",
+                    [
+                        types.principal(`${deployer.address}.${vestingOptions.token}`),
+                        types.uint(vestingOptions.amount),
+                        types.uint(vestingOptions.lockingPeriod),
+                        types.list(assigneesList)
+                    ],
+                    deployer.address
+                ),
+                Tx.contractCall(
+                    contract, "redeem",
+                    [types.principal(`${deployer.address}.${vestingOptions.token}`)],
+                    txSender.address
+                )
+            ]
+        );
+
+        const [deposit, redeem] = block.receipts;
+        deposit.result.expectOk();
+        redeem.result.expectOk();
+
+        // Check balance in the assignee address.
+        const xyzToken = new XyzToken(chain, deployer);
+        const result = xyzToken.balanceOf(txSender.address).result;
+        result.expectOk().expectUint(assignees[0].amount);
+    }
+});
+
+Clarinet.test({
+    name: "[redeem] shares can be redeemed only once",
+    async fn(chain: Chain, accounts: Map<string, Account>) {
+        const deployer = accounts.get("deployer")!;
+        const txSender = accounts.get("wallet_2")!;
+        const assignees = [{address: txSender.address, amount: 250}];
+        let assigneesList: any[] = [];
+        assignees.forEach((el) => {
+            assigneesList.push(
+                types.tuple({
+                    'address': types.principal(el.address),
+                    'amount': types.uint(el.amount)
+                })
+            )
+        });
+
+        const block = chain.mineBlock(
+            [
+                Tx.contractCall(
+                    contract, "deposit",
+                    [
+                        types.principal(`${deployer.address}.${vestingOptions.token}`),
+                        types.uint(vestingOptions.amount),
+                        types.uint(vestingOptions.lockingPeriod),
+                        types.list(assigneesList)
+                    ],
+                    deployer.address
+                ),
+                Tx.contractCall(
+                    contract, "redeem",
+                    [types.principal(`${deployer.address}.${vestingOptions.token}`)],
+                    txSender.address
+                ),
+                Tx.contractCall(
+                    contract, "redeem",
+                    [types.principal(`${deployer.address}.${vestingOptions.token}`)],
+                    txSender.address
+                )
+            ]
+        );
+
+        const [deposit, redeem, notRedeemed] = block.receipts;
+        deposit.result.expectOk();
+        redeem.result.expectOk();
+        notRedeemed.result.expectErr().expectInt(10);
+
+        // Check the balance in the assignee address.
+        const xyzToken = new XyzToken(chain, deployer);
+        const result = xyzToken.balanceOf(txSender.address).result;
+        result.expectOk().expectUint(assignees[0].amount);
     }
 });

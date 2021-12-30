@@ -13,6 +13,7 @@
 
 (define-constant ERR-SHARE-ALREADY-REDEEMED (err u10))
 (define-constant ERR-NOT-AUTHORIZED (err u11))
+(define-constant ERR-NOT-WHITELISTED (err u12))
 
 ;;
 ;; -- Data
@@ -52,7 +53,11 @@
   (locking-period uint)
   (assignees (list 10 (tuple (address principal) (amount uint))))
 )
-  (begin
+  (let (
+    (whitelisted-token (get-whitelisted-token (contract-of token)))
+  )
+    (asserts! (get whitelisted whitelisted-token) ERR-NOT-WHITELISTED)
+
     (add-to-vestings token amount locking-period)
     (var-set token-context (some (contract-of token)))
     (map add-to-shares assignees)
@@ -67,9 +72,10 @@
   (let (
     (recipient contract-caller)
     (share (get-share {address: tx-sender, token: (contract-of token)}))
+    (whitelisted-token (get-whitelisted-token (contract-of token)))
   )
     (asserts! (not (get redeemed share)) ERR-SHARE-ALREADY-REDEEMED)
-    (asserts! (not (get redeemed share)) ERR-SHARE-ALREADY-REDEEMED)
+    (asserts! (get whitelisted whitelisted-token) ERR-NOT-WHITELISTED)
 
     (unwrap-panic (as-contract (contract-call? token transfer (get amount share) tx-sender recipient none)))
     (mark-share-as-redeemed token)

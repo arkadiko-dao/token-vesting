@@ -3,12 +3,16 @@
 ## Instructions
 
 ```
-npm run serve
+$ yarn install
+```
+
+```
+$ npm run serve
 ```
 to run the development mode.
 
 
 ```
-yarn build
+$ yarn build
 ```
 to bundle the application.

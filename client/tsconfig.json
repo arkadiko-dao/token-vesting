@@ -1,0 +1,21 @@
+{
+    "compilerOptions": {
+        "allowJs": true,
+        "allowSyntheticDefaultImports": true,
+        "baseUrl": ".",
+        "jsx": "react",
+        "lib": ["es2017", "dom"],
+        "module": "es6",
+        "moduleResolution": "node",
+        "noImplicitAny": true,
+        "paths": {
+			      "@components/*": ["./src/components/*"]
+		    },
+        "strict": true,
+        "target": "esnext",
+    },
+    "include": [
+        "./src/index.tsx",
+        "./src/components/**/*"
+    ]
+}

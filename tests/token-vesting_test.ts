@@ -170,7 +170,7 @@ Clarinet.test({
         const [deposit, redeem, notRedeemed] = block.receipts;
         deposit.result.expectOk();
         redeem.result.expectOk();
-        notRedeemed.result.expectErr().expectInt(10);
+        notRedeemed.result.expectErr().expectUint(10);
 
         // Check the balance in the assignee address.
         const xyzToken = new XyzToken(chain, deployer);

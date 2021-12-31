@@ -2,3 +2,6 @@
 settings/Mainnet.toml
 settings/Testnet.toml
 history.txt
+
+client/node_modules
+client/yarn-error.log

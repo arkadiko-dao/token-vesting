@@ -1,5 +1,5 @@
 ;; Implement the `ft-trait` trait defined in the `ft-trait` contract
-(impl-trait .sip-010-trait.sip-010-trait)
+(impl-trait .sip-010-trait-ft-standard.sip-010-trait)
 
 (define-fungible-token xyz-token)
 

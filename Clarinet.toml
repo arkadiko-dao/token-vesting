@@ -5,12 +5,25 @@ costs_version = 1
 
 [contracts.token-vesting]
 path = "contracts/token-vesting.clar"
-depends_on = ["sip-010-trait", "xyz-token"]
+depends_on = ["sip-010-trait-ft-standard", "xyz-token", "arkadiko-dao"]
 
-[contracts.sip-010-trait]
-path = "contracts/sip-010-trait.clar"
+
+[contracts.arkadiko-dao-token-trait-v1]
 depends_on = []
+path = "contracts/arkadiko/dao-token-trait-v1.clar"
+
+[contracts.arkadiko-token]
+depends_on = ["sip-010-trait-ft-standard", "arkadiko-dao-token-trait-v1"]
+path = "contracts/arkadiko/arkadiko-token.clar"
+
+[contracts.arkadiko-dao]
+depends_on = ["arkadiko-token"]
+path = "contracts/arkadiko/arkadiko-dao.clar"
+
+[contracts.sip-010-trait-ft-standard]
+depends_on = []
+path = "contracts/sip-010-trait-ft-standard.clar"
 
 [contracts.xyz-token]
 path = "tests/contracts/xyz-token.clar"
-depends_on = ["sip-010-trait"]
+depends_on = ["sip-010-trait-ft-standard"]

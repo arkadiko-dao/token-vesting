@@ -40,7 +40,7 @@ class XyzToken {
 }
 
 Clarinet.test({
-  name: "[deposit] locked amount is transferred to the contract address",
+  name: "[deposit] when token is not whitelisted. Vesting is not allowed",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const deployer = accounts.get("deployer")!;
     const assignees = [{address: accounts.get("wallet_3")!.address, amount: 25}];
@@ -54,7 +54,7 @@ Clarinet.test({
         )
     });
 
-    let block = chain.mineBlock(
+    const block = chain.mineBlock(
       [
         Tx.contractCall(
           contract, "deposit",
@@ -69,10 +69,27 @@ Clarinet.test({
       ]
     );
 
-    let resp = block.receipts[0];
+    const resp = block.receipts[0];
     resp.result.expectErr().expectUint(12);
+  }
+});
 
-    block = chain.mineBlock(
+Clarinet.test({
+  name: "[deposit] when token is whitelisted. Locked amount is transferred to the contract address",
+  async fn(chain: Chain, accounts: Map<string, Account>) {
+    const deployer = accounts.get("deployer")!;
+    const assignees = [{address: accounts.get("wallet_3")!.address, amount: 25}];
+    let assigneesList: any[] = [];
+    assignees.forEach((el) => {
+      assigneesList.push(
+        types.tuple({
+          'address': types.principal(el.address),
+          'amount': types.uint(el.amount)
+        })
+        )
+    });
+
+    const block = chain.mineBlock(
       [
         Tx.contractCall(contract, "whitelist-token", [types.principal(`${deployer.address}.${vestingOptions.token}`)], deployer.address),
         Tx.contractCall(
@@ -87,9 +104,9 @@ Clarinet.test({
         ),
       ]
     );
-    resp = block.receipts[0];
-    resp.result.expectOk().expectBool(true);
 
+    let resp = block.receipts[0];
+    resp.result.expectOk().expectBool(true);
 
     // Check balance in the contract address.
     const xyzToken = new XyzToken(chain, deployer);
